@@ -5,6 +5,7 @@ import base_datos
 import impresion
 import exportar_excel
 from datetime import datetime
+import backup
 
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
@@ -46,10 +47,14 @@ class SalsamentariaApp(ctk.CTk):
         self.total_dia_actual = 0.0
         self.cantidad_facturas_actual = 0
 
+        # Inicializar vistas
         self.vista_inventario = self.crear_vista_inventario()
         self.vista_ventas = self.crear_vista_ventas()
         self.vista_reportes = self.crear_vista_reportes()
         
+        # --- EJECUTAR BACKUP AUTOMÁTICO AL ARRANCAR ---
+        backup.realizar_backup_automatico(base_datos.DB_NAME)
+
         self.mostrar_ventas()
 
     def mostrar_inventario(self):
@@ -300,14 +305,17 @@ class SalsamentariaApp(ctk.CTk):
             conexion.close()
 
     # ==========================================
-    # 3. CIERRE DE CAJA
+    # 3. CIERRE DE CAJA Y RESPALDOS
     # ==========================================
+    def exportar_copia_seguridad(self):
+        backup.realizar_backup_manual(base_datos.DB_NAME)
+
     def crear_vista_reportes(self):
         frame = ctk.CTkFrame(self.frame_principal, fg_color="transparent")
         frame.grid_rowconfigure(2, weight=1)
         frame.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(frame, text="Cierre de Caja - Reporte del Día", font=ctk.CTkFont(size=24, weight="bold")).grid(row=0, column=0, pady=(0, 10), sticky="w")
+        ctk.CTkLabel(frame, text="Cierre de Caja y Respaldos", font=ctk.CTkFont(size=24, weight="bold")).grid(row=0, column=0, pady=(0, 10), sticky="w")
         
         panel_metricas = ctk.CTkFrame(frame)
         panel_metricas.grid(row=1, column=0, sticky="ew", pady=10)
@@ -329,15 +337,19 @@ class SalsamentariaApp(ctk.CTk):
         self.tabla_cierre.column("Total", width=150, anchor="e")
         self.tabla_cierre.grid(row=3, column=0, sticky="nsew")
 
-        # NUEVOS BOTONES DE IMPRESIÓN Y EXPORTACIÓN
+        # BOTONES DE ACCIÓN (Imprimir, Excel y Copia de Seguridad)
         frame_botones = ctk.CTkFrame(frame, fg_color="transparent")
         frame_botones.grid(row=4, column=0, pady=20)
 
         btn_imprimir_cierre = ctk.CTkButton(frame_botones, text="IMPRIMIR CORTE Z (PDF)", height=50, font=ctk.CTkFont(weight="bold"), command=self.imprimir_cierre)
-        btn_imprimir_cierre.grid(row=0, column=0, padx=10)
+        btn_imprimir_cierre.grid(row=0, column=0, padx=5)
 
         btn_exportar_cierre = ctk.CTkButton(frame_botones, text="EXPORTAR A EXCEL", height=50, font=ctk.CTkFont(weight="bold"), fg_color="#217346", hover_color="#1e6b40", command=self.exportar_cierre_excel)
-        btn_exportar_cierre.grid(row=0, column=1, padx=10)
+        btn_exportar_cierre.grid(row=0, column=1, padx=5)
+
+        # NUEVO BOTÓN PARA COPIA DE SEGURIDAD MANUAL
+        btn_backup = ctk.CTkButton(frame_botones, text="CREAR COPIA DE SEGURIDAD", height=50, font=ctk.CTkFont(weight="bold"), fg_color="#457B9D", hover_color="#1D3557", command=self.exportar_copia_seguridad)
+        btn_backup.grid(row=0, column=2, padx=5)
 
         return frame
 
