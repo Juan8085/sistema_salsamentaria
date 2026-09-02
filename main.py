@@ -1,8 +1,9 @@
 import customtkinter as ctk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox, simpledialog, filedialog
 import sqlite3
 import base_datos
 import impresion
+import exportar_excel
 from datetime import datetime
 
 ctk.set_appearance_mode("Light")
@@ -11,11 +12,9 @@ ctk.set_default_color_theme("blue")
 class SalsamentariaApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-
         self.title("Sistema de Gestión - Salsamentaria")
         self.geometry("1100x700")
         self.minsize(900, 600)
-
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
 
@@ -33,7 +32,6 @@ class SalsamentariaApp(ctk.CTk):
         self.btn_inventario = ctk.CTkButton(self.frame_menu, text="Inventario / Compras", height=40, command=self.mostrar_inventario)
         self.btn_inventario.grid(row=2, column=0, padx=20, pady=10)
         
-        # NUEVO BOTÓN
         self.btn_reportes = ctk.CTkButton(self.frame_menu, text="Cierre de Caja", height=40, command=self.mostrar_reportes)
         self.btn_reportes.grid(row=3, column=0, padx=20, pady=10)
 
@@ -43,20 +41,17 @@ class SalsamentariaApp(ctk.CTk):
         self.frame_principal.grid_rowconfigure(0, weight=1)
         self.frame_principal.grid_columnconfigure(0, weight=1)
 
-        # Variables de venta y cierre
         self.carrito = []
         self.total_venta = 0.0
         self.total_dia_actual = 0.0
         self.cantidad_facturas_actual = 0
 
-        # Inicializar vistas
         self.vista_inventario = self.crear_vista_inventario()
         self.vista_ventas = self.crear_vista_ventas()
         self.vista_reportes = self.crear_vista_reportes()
         
         self.mostrar_ventas()
 
-    # --- CONTROL DE NAVEGACIÓN ---
     def mostrar_inventario(self):
         self.vista_ventas.grid_forget()
         self.vista_reportes.grid_forget()
@@ -76,7 +71,7 @@ class SalsamentariaApp(ctk.CTk):
         self.cargar_datos_cierre()
 
     # ==========================================
-    # 1. INVENTARIO (SE MANTIENE IGUAL)
+    # 1. INVENTARIO
     # ==========================================
     def crear_vista_inventario(self):
         frame = ctk.CTkFrame(self.frame_principal, fg_color="transparent")
@@ -104,7 +99,7 @@ class SalsamentariaApp(ctk.CTk):
         self.ent_costo_total = ctk.CTkEntry(form_frame, width=150)
         self.ent_costo_total.grid(row=1, column=3, padx=10, pady=10)
 
-        ctk.CTkButton(form_frame, text="Registrar Compra e Inventario", height=40, font=ctk.CTkFont(weight="bold"), command=self.guardar_compra).grid(row=2, column=0, columnspan=4, pady=20)
+        ctk.CTkButton(form_frame, text="Registrar Compra", height=40, font=ctk.CTkFont(weight="bold"), command=self.guardar_compra).grid(row=2, column=0, columnspan=4, pady=20)
 
         style = ttk.Style()
         style.configure("Treeview", rowheight=30, font=('Arial', 11))
@@ -118,6 +113,10 @@ class SalsamentariaApp(ctk.CTk):
             self.tabla_inventario.column(col, width=ancho, anchor="center")
         self.tabla_inventario.grid(row=2, column=0, columnspan=2, sticky="nsew")
 
+        # NUEVO BOTÓN EXPORTAR INVENTARIO
+        btn_exportar_inv = ctk.CTkButton(frame, text="Exportar a Excel", height=35, fg_color="#217346", hover_color="#1e6b40", font=ctk.CTkFont(weight="bold"), command=self.exportar_inv_excel)
+        btn_exportar_inv.grid(row=3, column=1, pady=10, sticky="e")
+
         return frame
 
     def guardar_compra(self):
@@ -127,8 +126,7 @@ class SalsamentariaApp(ctk.CTk):
             cantidad = float(self.ent_cantidad_compra.get())
             costo_total = float(self.ent_costo_total.get())
         except ValueError:
-            messagebox.showerror("Error", "Cantidad y costo deben ser números.")
-            return
+            return messagebox.showerror("Error", "Cantidad y costo deben ser números.")
 
         costo_unitario = costo_total / cantidad
         precio_sugerido = costo_unitario * 1.15
@@ -163,8 +161,13 @@ class SalsamentariaApp(ctk.CTk):
             self.tabla_inventario.insert("", "end", values=(fila[0], fila[1], fila[2], round(fila[3], 2), f"${fila[4]:,.0f}", f"${fila[5]:,.0f}"))
         conexion.close()
 
+    def exportar_inv_excel(self):
+        ruta_guardado = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Archivos de Excel", "*.xlsx")], title="Guardar Inventario", initialfile="Inventario_Salsamentaria.xlsx")
+        if ruta_guardado:
+            exportar_excel.exportar_inventario(base_datos.DB_NAME, ruta_guardado)
+
     # ==========================================
-    # 2. PUNTO DE VENTA (SE MANTIENE IGUAL)
+    # 2. PUNTO DE VENTA
     # ==========================================
     def crear_vista_ventas(self):
         frame = ctk.CTkFrame(self.frame_principal, fg_color="transparent")
@@ -189,7 +192,6 @@ class SalsamentariaApp(ctk.CTk):
         self.tabla_busqueda.column("Precio", width=80)
         self.tabla_busqueda.column("Unidad", width=60)
         self.tabla_busqueda.column("Stock", width=60)
-        
         self.tabla_busqueda.grid(row=2, column=0, sticky="nsew", padx=10, pady=10)
         self.tabla_busqueda.bind("<Double-1>", self.agregar_al_carrito)
 
@@ -243,14 +245,12 @@ class SalsamentariaApp(ctk.CTk):
         stock_disponible = stock_total - cantidad_en_carrito
 
         if stock_disponible <= 0:
-            messagebox.showwarning("Agotado", f"No hay stock disponible de {nombre}.")
-            return
+            return messagebox.showwarning("Agotado", f"No hay stock disponible de {nombre}.")
         
         cantidad = simpledialog.askfloat("Cantidad", f"Stock disponible: {stock_disponible} {unidad}\nIngrese cantidad:", parent=self, minvalue=0.01)
         if cantidad:
             if cantidad > stock_disponible:
-                messagebox.showerror("Error", f"Solo puedes vender hasta {stock_disponible}.")
-                return
+                return messagebox.showerror("Error", f"Solo puedes vender hasta {stock_disponible}.")
             subtotal = float(precio) * cantidad
             self.carrito.append({"id_producto": id_prod, "nombre": nombre, "cantidad": cantidad, "precio_unitario": precio, "subtotal": subtotal})
             self.tabla_carrito.insert("", "end", values=(nombre, f"{cantidad} {unidad}", f"${subtotal:,.0f}"))
@@ -300,17 +300,15 @@ class SalsamentariaApp(ctk.CTk):
             conexion.close()
 
     # ==========================================
-    # 3. NUEVO MÓDULO: CIERRE DE CAJA
+    # 3. CIERRE DE CAJA
     # ==========================================
     def crear_vista_reportes(self):
         frame = ctk.CTkFrame(self.frame_principal, fg_color="transparent")
         frame.grid_rowconfigure(2, weight=1)
         frame.grid_columnconfigure(0, weight=1)
 
-        # Encabezado
         ctk.CTkLabel(frame, text="Cierre de Caja - Reporte del Día", font=ctk.CTkFont(size=24, weight="bold")).grid(row=0, column=0, pady=(0, 10), sticky="w")
         
-        # Panel de Métricas
         panel_metricas = ctk.CTkFrame(frame)
         panel_metricas.grid(row=1, column=0, sticky="ew", pady=10)
         panel_metricas.grid_columnconfigure((0, 1), weight=1)
@@ -321,42 +319,33 @@ class SalsamentariaApp(ctk.CTk):
         self.lbl_cantidad_facturas = ctk.CTkLabel(panel_metricas, text="Facturas Emitidas: 0", font=ctk.CTkFont(size=24, weight="bold"))
         self.lbl_cantidad_facturas.grid(row=0, column=1, pady=20)
 
-        # Tabla de ventas del día
         ctk.CTkLabel(frame, text="Detalle de Facturas de Hoy", font=ctk.CTkFont(size=16)).grid(row=2, column=0, sticky="w", pady=(10, 5))
         
         cols_cierre = ("No. Factura", "Hora de Venta", "Total")
         self.tabla_cierre = ttk.Treeview(frame, columns=cols_cierre, show="headings")
-        self.tabla_cierre.heading("No. Factura", text="No. Factura")
-        self.tabla_cierre.heading("Hora de Venta", text="Fecha y Hora")
-        self.tabla_cierre.heading("Total", text="Total")
-        
+        for col in cols_cierre: self.tabla_cierre.heading(col, text=col)
         self.tabla_cierre.column("No. Factura", width=100, anchor="center")
         self.tabla_cierre.column("Hora de Venta", width=250, anchor="center")
         self.tabla_cierre.column("Total", width=150, anchor="e")
-        
         self.tabla_cierre.grid(row=3, column=0, sticky="nsew")
 
-        # Botón Imprimir
-        btn_imprimir_cierre = ctk.CTkButton(frame, text="IMPRIMIR CORTE Z (PDF)", height=50, font=ctk.CTkFont(weight="bold"), command=self.imprimir_cierre)
-        btn_imprimir_cierre.grid(row=4, column=0, pady=20)
+        # NUEVOS BOTONES DE IMPRESIÓN Y EXPORTACIÓN
+        frame_botones = ctk.CTkFrame(frame, fg_color="transparent")
+        frame_botones.grid(row=4, column=0, pady=20)
+
+        btn_imprimir_cierre = ctk.CTkButton(frame_botones, text="IMPRIMIR CORTE Z (PDF)", height=50, font=ctk.CTkFont(weight="bold"), command=self.imprimir_cierre)
+        btn_imprimir_cierre.grid(row=0, column=0, padx=10)
+
+        btn_exportar_cierre = ctk.CTkButton(frame_botones, text="EXPORTAR A EXCEL", height=50, font=ctk.CTkFont(weight="bold"), fg_color="#217346", hover_color="#1e6b40", command=self.exportar_cierre_excel)
+        btn_exportar_cierre.grid(row=0, column=1, padx=10)
 
         return frame
 
     def cargar_datos_cierre(self):
-        # Limpiar tabla
-        for item in self.tabla_cierre.get_children():
-            self.tabla_cierre.delete(item)
-            
+        for item in self.tabla_cierre.get_children(): self.tabla_cierre.delete(item)
         conexion = base_datos.obtener_conexion()
         cursor = conexion.cursor()
-        
-        # Filtrar solo las ventas de la fecha actual
-        # Utilizamos date(..., 'localtime') para sincronizar la zona horaria del PC
-        cursor.execute("""
-            SELECT numero_factura, datetime(fecha_venta, 'localtime'), total_venta 
-            FROM ventas 
-            WHERE date(fecha_venta, 'localtime') = date('now', 'localtime')
-        """)
+        cursor.execute("SELECT numero_factura, datetime(fecha_venta, 'localtime'), total_venta FROM ventas WHERE date(fecha_venta, 'localtime') = date('now', 'localtime')")
         ventas_hoy = cursor.fetchall()
         conexion.close()
         
@@ -367,18 +356,22 @@ class SalsamentariaApp(ctk.CTk):
             
         self.total_dia_actual = total_dia
         self.cantidad_facturas_actual = len(ventas_hoy)
-        
         self.lbl_total_cierre.configure(text=f"Total Ingresos: ${total_dia:,.0f}")
         self.lbl_cantidad_facturas.configure(text=f"Facturas Emitidas: {self.cantidad_facturas_actual}")
 
     def imprimir_cierre(self):
-        if self.cantidad_facturas_actual == 0:
-            messagebox.showinfo("Aviso", "No hay ventas registradas el día de hoy.")
-            return
-            
+        if self.cantidad_facturas_actual == 0: return messagebox.showinfo("Aviso", "No hay ventas hoy.")
         fecha_cierre = datetime.now().strftime('%d/%m/%Y')
         impresion.generar_imprimir_cierre(self.total_dia_actual, self.cantidad_facturas_actual, fecha_cierre)
-        messagebox.showinfo("Cierre Exitoso", "Se ha enviado el reporte de cierre a la impresora.")
+        messagebox.showinfo("Cierre Exitoso", "Reporte enviado a la impresora.")
+
+    def exportar_cierre_excel(self):
+        if self.cantidad_facturas_actual == 0:
+            return messagebox.showinfo("Aviso", "No hay ventas para exportar hoy.")
+        fecha_str = datetime.now().strftime('%d-%m-%Y')
+        ruta_guardado = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Archivos de Excel", "*.xlsx")], title="Guardar Cierre", initialfile=f"Ventas_Dia_{fecha_str}.xlsx")
+        if ruta_guardado:
+            exportar_excel.exportar_ventas_dia(base_datos.DB_NAME, ruta_guardado)
 
 if __name__ == "__main__":
     app = SalsamentariaApp()
