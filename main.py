@@ -169,20 +169,23 @@ class SalsamentariaApp(ctk.CTk):
         self.ent_buscador.grid(row=1, column=0, pady=5, padx=10, sticky="ew")
         self.ent_buscador.bind("<KeyRelease>", self.filtrar_productos_venta)
 
-        cols_busqueda = ("ID", "Producto", "Precio", "Unidad")
+        # SE AÑADIÓ LA COLUMNA STOCK
+        cols_busqueda = ("ID", "Producto", "Precio", "Unidad", "Stock")
         self.tabla_busqueda = ttk.Treeview(panel_izq, columns=cols_busqueda, show="headings")
         self.tabla_busqueda.heading("ID", text="ID")
-        self.tabla_busqueda.heading("Producto", text="Producto (Doble clic para agregar)")
+        self.tabla_busqueda.heading("Producto", text="Producto (Doble clic)")
         self.tabla_busqueda.heading("Precio", text="Precio/U")
         self.tabla_busqueda.heading("Unidad", text="Medida")
+        self.tabla_busqueda.heading("Stock", text="Stock")
         
-        self.tabla_busqueda.column("ID", width=40)
-        self.tabla_busqueda.column("Producto", width=250)
-        self.tabla_busqueda.column("Precio", width=90)
-        self.tabla_busqueda.column("Unidad", width=70)
+        self.tabla_busqueda.column("ID", width=30)
+        self.tabla_busqueda.column("Producto", width=220)
+        self.tabla_busqueda.column("Precio", width=80)
+        self.tabla_busqueda.column("Unidad", width=60)
+        self.tabla_busqueda.column("Stock", width=60)
         
         self.tabla_busqueda.grid(row=2, column=0, sticky="nsew", padx=10, pady=10)
-        self.tabla_busqueda.bind("<Double-1>", self.agregar_al_carrito) # Evento de doble clic
+        self.tabla_busqueda.bind("<Double-1>", self.agregar_al_carrito)
 
         # -- PANEL DERECHO: CARRITO Y COBRO --
         panel_der = ctk.CTkFrame(frame)
@@ -203,7 +206,6 @@ class SalsamentariaApp(ctk.CTk):
         
         self.tabla_carrito.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
 
-        # Totales y Vueltas
         self.lbl_total = ctk.CTkLabel(panel_der, text="TOTAL: $0", font=ctk.CTkFont(size=35, weight="bold"), text_color="#2A9D8F")
         self.lbl_total.grid(row=2, column=0, pady=10)
 
@@ -230,10 +232,13 @@ class SalsamentariaApp(ctk.CTk):
 
         conexion = base_datos.obtener_conexion()
         cursor = conexion.cursor()
-        cursor.execute("SELECT id_producto, nombre, precio_sugerido, unidad_medida FROM productos WHERE nombre LIKE ?", (f'%{termino}%',))
+        # SE AÑADIÓ stock_actual A LA CONSULTA
+        cursor.execute("SELECT id_producto, nombre, precio_sugerido, unidad_medida, stock_actual FROM productos WHERE nombre LIKE ?", (f'%{termino}%',))
         
         for fila in cursor.fetchall():
-            self.tabla_busqueda.insert("", "end", values=(fila[0], fila[1], fila[2], fila[3]))
+            # Formatear el stock para que no tenga muchos decimales
+            stock_formateado = round(fila[4], 2)
+            self.tabla_busqueda.insert("", "end", values=(fila[0], fila[1], fila[2], fila[3], stock_formateado))
         conexion.close()
 
     def agregar_al_carrito(self, event):
@@ -241,14 +246,28 @@ class SalsamentariaApp(ctk.CTk):
         if not seleccion: return
 
         item = self.tabla_busqueda.item(seleccion[0])
-        id_prod, nombre, precio, unidad = item['values']
+        id_prod, nombre, precio, unidad, stock = item['values']
+        stock_total = float(stock)
         
-        # Pedir cantidad / peso al usuario
-        cantidad = simpledialog.askfloat("Cantidad", f"Ingrese la cantidad de {nombre} ({unidad}):", parent=self, minvalue=0.01)
+        # Calcular cuánto de este producto ya está metido en el carrito actual
+        cantidad_en_carrito = sum(item["cantidad"] for item in self.carrito if str(item["id_producto"]) == str(id_prod))
+        stock_disponible = stock_total - cantidad_en_carrito
+
+        # Validar si ya no hay stock ANTES de pedir la cantidad
+        if stock_disponible <= 0:
+            messagebox.showwarning("Agotado", f"No hay stock disponible de {nombre} (O ya tienes todo el stock en el carrito).")
+            return
+        
+        # Mostrar el stock disponible en la ventana de cantidad
+        cantidad = simpledialog.askfloat("Cantidad", f"Stock disponible: {stock_disponible} {unidad}\n\nIngrese la cantidad a vender:", parent=self, minvalue=0.01)
         
         if cantidad:
+            # Validar que no pida más de lo que hay
+            if cantidad > stock_disponible:
+                messagebox.showerror("Stock Insuficiente", f"Solo puedes vender hasta {stock_disponible} {unidad} de {nombre}.")
+                return
+
             subtotal = float(precio) * cantidad
-            # Guardamos en la variable para registrar en BD
             self.carrito.append({
                 "id_producto": id_prod,
                 "nombre": nombre,
@@ -257,7 +276,6 @@ class SalsamentariaApp(ctk.CTk):
                 "subtotal": subtotal
             })
             
-            # Mostramos en la tabla
             self.tabla_carrito.insert("", "end", values=(nombre, f"{cantidad} {unidad}", f"${subtotal:,.0f}"))
             self.actualizar_total()
 
