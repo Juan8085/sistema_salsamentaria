@@ -374,5 +374,7 @@ class SalsamentariaApp(ctk.CTk):
             exportar_excel.exportar_ventas_dia(base_datos.DB_NAME, ruta_guardado)
 
 if __name__ == "__main__":
+    # Esto garantiza que al abrir el .exe en un PC nuevo, se creen las tablas automáticamente
+    base_datos.inicializar_base_datos() 
     app = SalsamentariaApp()
     app.mainloop()
