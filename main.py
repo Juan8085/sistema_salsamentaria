@@ -2,6 +2,7 @@ import customtkinter as ctk
 from tkinter import ttk, messagebox, simpledialog
 import sqlite3
 import base_datos
+import impresion
 
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
@@ -308,6 +309,15 @@ class SalsamentariaApp(ctk.CTk):
                 cursor.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE id_producto = ?", (item["cantidad"], item["id_producto"]))
 
             conexion.commit()
+            
+            # --- NUEVA LÍNEA PARA GENERAR E IMPRIMIR LA FACTURA ---
+            impresion.generar_y_imprimir_factura(numero_factura, self.carrito, self.total_venta, recibido, vueltas)
+
+            messagebox.showinfo("Venta Exitosa", f"Se generó e imprimió la factura #{numero_factura}")
+            
+            # Limpiar pantalla
+            self.carrito.clear()
+
             messagebox.showinfo("Venta Exitosa", f"Se generó la factura #{numero_factura}")
             
             # --- AQUÍ LLAMAREMOS A LA FUNCIÓN DE IMPRIMIR PDF EN EL SIGUIENTE PASO ---
