@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox, simpledialog
 import sqlite3
 import base_datos
 import impresion
+from datetime import datetime
 
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
@@ -21,7 +22,7 @@ class SalsamentariaApp(ctk.CTk):
         # --- MENÚ LATERAL ---
         self.frame_menu = ctk.CTkFrame(self, width=200, corner_radius=0)
         self.frame_menu.grid(row=0, column=0, sticky="nsew")
-        self.frame_menu.grid_rowconfigure(4, weight=1)
+        self.frame_menu.grid_rowconfigure(5, weight=1)
 
         self.logo_label = ctk.CTkLabel(self.frame_menu, text="SALSAMENTARIA", font=ctk.CTkFont(size=20, weight="bold"))
         self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 30))
@@ -31,6 +32,10 @@ class SalsamentariaApp(ctk.CTk):
 
         self.btn_inventario = ctk.CTkButton(self.frame_menu, text="Inventario / Compras", height=40, command=self.mostrar_inventario)
         self.btn_inventario.grid(row=2, column=0, padx=20, pady=10)
+        
+        # NUEVO BOTÓN
+        self.btn_reportes = ctk.CTkButton(self.frame_menu, text="Cierre de Caja", height=40, command=self.mostrar_reportes)
+        self.btn_reportes.grid(row=3, column=0, padx=20, pady=10)
 
         # --- ÁREA PRINCIPAL ---
         self.frame_principal = ctk.CTkFrame(self, corner_radius=10)
@@ -38,32 +43,42 @@ class SalsamentariaApp(ctk.CTk):
         self.frame_principal.grid_rowconfigure(0, weight=1)
         self.frame_principal.grid_columnconfigure(0, weight=1)
 
-        # Variables de estado para la venta
-        self.carrito = [] # Lista de diccionarios
+        # Variables de venta y cierre
+        self.carrito = []
         self.total_venta = 0.0
+        self.total_dia_actual = 0.0
+        self.cantidad_facturas_actual = 0
 
-        # Vistas
+        # Inicializar vistas
         self.vista_inventario = self.crear_vista_inventario()
         self.vista_ventas = self.crear_vista_ventas()
+        self.vista_reportes = self.crear_vista_reportes()
         
-        # Iniciar en ventas (es lo que más se usa)
         self.mostrar_ventas()
 
+    # --- CONTROL DE NAVEGACIÓN ---
     def mostrar_inventario(self):
         self.vista_ventas.grid_forget()
+        self.vista_reportes.grid_forget()
         self.vista_inventario.grid(row=0, column=0, sticky="nsew")
         self.cargar_tabla_inventario()
 
     def mostrar_ventas(self):
         self.vista_inventario.grid_forget()
+        self.vista_reportes.grid_forget()
         self.vista_ventas.grid(row=0, column=0, sticky="nsew")
-        self.filtrar_productos_venta() # Cargar todos los productos al inicio
+        self.filtrar_productos_venta()
+
+    def mostrar_reportes(self):
+        self.vista_inventario.grid_forget()
+        self.vista_ventas.grid_forget()
+        self.vista_reportes.grid(row=0, column=0, sticky="nsew")
+        self.cargar_datos_cierre()
 
     # ==========================================
-    # 1. MÓDULO DE INVENTARIO (YA LO TENÍAMOS)
+    # 1. INVENTARIO (SE MANTIENE IGUAL)
     # ==========================================
     def crear_vista_inventario(self):
-        # [El código de inventario se mantiene igual al paso anterior]
         frame = ctk.CTkFrame(self.frame_principal, fg_color="transparent")
         frame.grid_rowconfigure(2, weight=1)
         frame.grid_columnconfigure((0, 1), weight=1)
@@ -127,8 +142,7 @@ class SalsamentariaApp(ctk.CTk):
                 cursor.execute("UPDATE productos SET costo_actual = ?, precio_sugerido = ?, stock_actual = stock_actual + ? WHERE id_producto = ?", (costo_unitario, precio_sugerido, cantidad, producto[0]))
             else:
                 cursor.execute("INSERT INTO productos (nombre, unidad_medida, costo_actual, precio_sugerido, stock_actual) VALUES (?, ?, ?, ?, ?)", (nombre, unidad, costo_unitario, precio_sugerido, cantidad))
-                id_prod = cursor.lastrowid
-                producto = (id_prod,)
+                producto = (cursor.lastrowid,)
             
             cursor.execute("INSERT INTO compras (id_producto, cantidad_comprada, costo_total_compra) VALUES (?, ?, ?)", (producto[0], cantidad, costo_total))
             conexion.commit()
@@ -150,7 +164,7 @@ class SalsamentariaApp(ctk.CTk):
         conexion.close()
 
     # ==========================================
-    # 2. NUEVO MÓDULO: PUNTO DE VENTA
+    # 2. PUNTO DE VENTA (SE MANTIENE IGUAL)
     # ==========================================
     def crear_vista_ventas(self):
         frame = ctk.CTkFrame(self.frame_principal, fg_color="transparent")
@@ -158,26 +172,18 @@ class SalsamentariaApp(ctk.CTk):
         frame.grid_columnconfigure(0, weight=1)
         frame.grid_columnconfigure(1, weight=1)
 
-        # -- PANEL IZQUIERDO: BÚSQUEDA --
         panel_izq = ctk.CTkFrame(frame)
         panel_izq.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         panel_izq.grid_rowconfigure(2, weight=1)
 
         ctk.CTkLabel(panel_izq, text="Buscador de Productos", font=ctk.CTkFont(size=20, weight="bold")).grid(row=0, column=0, pady=10)
-        
-        self.ent_buscador = ctk.CTkEntry(panel_izq, placeholder_text="Escriba el nombre para buscar...", width=300, font=ctk.CTkFont(size=14))
+        self.ent_buscador = ctk.CTkEntry(panel_izq, placeholder_text="Escriba el nombre...", width=300)
         self.ent_buscador.grid(row=1, column=0, pady=5, padx=10, sticky="ew")
         self.ent_buscador.bind("<KeyRelease>", self.filtrar_productos_venta)
 
-        # SE AÑADIÓ LA COLUMNA STOCK
         cols_busqueda = ("ID", "Producto", "Precio", "Unidad", "Stock")
         self.tabla_busqueda = ttk.Treeview(panel_izq, columns=cols_busqueda, show="headings")
-        self.tabla_busqueda.heading("ID", text="ID")
-        self.tabla_busqueda.heading("Producto", text="Producto (Doble clic)")
-        self.tabla_busqueda.heading("Precio", text="Precio/U")
-        self.tabla_busqueda.heading("Unidad", text="Medida")
-        self.tabla_busqueda.heading("Stock", text="Stock")
-        
+        for col in cols_busqueda: self.tabla_busqueda.heading(col, text=col)
         self.tabla_busqueda.column("ID", width=30)
         self.tabla_busqueda.column("Producto", width=220)
         self.tabla_busqueda.column("Precio", width=80)
@@ -187,7 +193,6 @@ class SalsamentariaApp(ctk.CTk):
         self.tabla_busqueda.grid(row=2, column=0, sticky="nsew", padx=10, pady=10)
         self.tabla_busqueda.bind("<Double-1>", self.agregar_al_carrito)
 
-        # -- PANEL DERECHO: CARRITO Y COBRO --
         panel_der = ctk.CTkFrame(frame)
         panel_der.grid(row=0, column=1, sticky="nsew")
         panel_der.grid_rowconfigure(1, weight=1)
@@ -196,14 +201,7 @@ class SalsamentariaApp(ctk.CTk):
 
         cols_carrito = ("Producto", "Cantidad", "Subtotal")
         self.tabla_carrito = ttk.Treeview(panel_der, columns=cols_carrito, show="headings")
-        self.tabla_carrito.heading("Producto", text="Producto")
-        self.tabla_carrito.heading("Cantidad", text="Cant/Peso")
-        self.tabla_carrito.heading("Subtotal", text="Subtotal")
-        
-        self.tabla_carrito.column("Producto", width=180)
-        self.tabla_carrito.column("Cantidad", width=80, anchor="center")
-        self.tabla_carrito.column("Subtotal", width=100, anchor="e")
-        
+        for col in cols_carrito: self.tabla_carrito.heading(col, text=col)
         self.tabla_carrito.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
 
         self.lbl_total = ctk.CTkLabel(panel_der, text="TOTAL: $0", font=ctk.CTkFont(size=35, weight="bold"), text_color="#2A9D8F")
@@ -211,149 +209,176 @@ class SalsamentariaApp(ctk.CTk):
 
         frame_pagos = ctk.CTkFrame(panel_der, fg_color="transparent")
         frame_pagos.grid(row=3, column=0, pady=10)
-
-        ctk.CTkLabel(frame_pagos, text="Dinero Recibido $:", font=ctk.CTkFont(size=18)).grid(row=0, column=0, padx=10)
-        self.ent_recibido = ctk.CTkEntry(frame_pagos, font=ctk.CTkFont(size=18), width=150)
+        ctk.CTkLabel(frame_pagos, text="Dinero Recibido $:").grid(row=0, column=0, padx=10)
+        self.ent_recibido = ctk.CTkEntry(frame_pagos, width=150)
         self.ent_recibido.grid(row=0, column=1)
         self.ent_recibido.bind("<KeyRelease>", self.calcular_vueltas)
 
         self.lbl_vueltas = ctk.CTkLabel(panel_der, text="VUELTAS: $0", font=ctk.CTkFont(size=28, weight="bold"), text_color="#E76F51")
         self.lbl_vueltas.grid(row=4, column=0, pady=10)
 
-        self.btn_cobrar = ctk.CTkButton(panel_der, text="COBRAR E IMPRIMIR", height=60, font=ctk.CTkFont(size=18, weight="bold"), command=self.procesar_venta)
+        self.btn_cobrar = ctk.CTkButton(panel_der, text="COBRAR E IMPRIMIR", height=60, font=ctk.CTkFont(weight="bold"), command=self.procesar_venta)
         self.btn_cobrar.grid(row=5, column=0, sticky="ew", padx=20, pady=20)
 
         return frame
 
     def filtrar_productos_venta(self, event=None):
         termino = self.ent_buscador.get().strip().upper()
-        for item in self.tabla_busqueda.get_children():
-            self.tabla_busqueda.delete(item)
-
+        for item in self.tabla_busqueda.get_children(): self.tabla_busqueda.delete(item)
         conexion = base_datos.obtener_conexion()
         cursor = conexion.cursor()
-        # SE AÑADIÓ stock_actual A LA CONSULTA
         cursor.execute("SELECT id_producto, nombre, precio_sugerido, unidad_medida, stock_actual FROM productos WHERE nombre LIKE ?", (f'%{termino}%',))
-        
         for fila in cursor.fetchall():
-            # Formatear el stock para que no tenga muchos decimales
-            stock_formateado = round(fila[4], 2)
-            self.tabla_busqueda.insert("", "end", values=(fila[0], fila[1], fila[2], fila[3], stock_formateado))
+            self.tabla_busqueda.insert("", "end", values=(fila[0], fila[1], fila[2], fila[3], round(fila[4], 2)))
         conexion.close()
 
     def agregar_al_carrito(self, event):
         seleccion = self.tabla_busqueda.selection()
         if not seleccion: return
-
         item = self.tabla_busqueda.item(seleccion[0])
         id_prod, nombre, precio, unidad, stock = item['values']
         stock_total = float(stock)
         
-        # Calcular cuánto de este producto ya está metido en el carrito actual
         cantidad_en_carrito = sum(item["cantidad"] for item in self.carrito if str(item["id_producto"]) == str(id_prod))
         stock_disponible = stock_total - cantidad_en_carrito
 
-        # Validar si ya no hay stock ANTES de pedir la cantidad
         if stock_disponible <= 0:
-            messagebox.showwarning("Agotado", f"No hay stock disponible de {nombre} (O ya tienes todo el stock en el carrito).")
+            messagebox.showwarning("Agotado", f"No hay stock disponible de {nombre}.")
             return
         
-        # Mostrar el stock disponible en la ventana de cantidad
-        cantidad = simpledialog.askfloat("Cantidad", f"Stock disponible: {stock_disponible} {unidad}\n\nIngrese la cantidad a vender:", parent=self, minvalue=0.01)
-        
+        cantidad = simpledialog.askfloat("Cantidad", f"Stock disponible: {stock_disponible} {unidad}\nIngrese cantidad:", parent=self, minvalue=0.01)
         if cantidad:
-            # Validar que no pida más de lo que hay
             if cantidad > stock_disponible:
-                messagebox.showerror("Stock Insuficiente", f"Solo puedes vender hasta {stock_disponible} {unidad} de {nombre}.")
+                messagebox.showerror("Error", f"Solo puedes vender hasta {stock_disponible}.")
                 return
-
             subtotal = float(precio) * cantidad
-            self.carrito.append({
-                "id_producto": id_prod,
-                "nombre": nombre,
-                "cantidad": cantidad,
-                "precio_unitario": precio,
-                "subtotal": subtotal
-            })
-            
+            self.carrito.append({"id_producto": id_prod, "nombre": nombre, "cantidad": cantidad, "precio_unitario": precio, "subtotal": subtotal})
             self.tabla_carrito.insert("", "end", values=(nombre, f"{cantidad} {unidad}", f"${subtotal:,.0f}"))
             self.actualizar_total()
 
     def actualizar_total(self):
         self.total_venta = sum(item["subtotal"] for item in self.carrito)
         self.lbl_total.configure(text=f"TOTAL: ${self.total_venta:,.0f}")
-        self.calcular_vueltas() # Recalcular si ya habían escrito algo en "Recibido"
+        self.calcular_vueltas()
 
     def calcular_vueltas(self, event=None):
         try:
             recibido = float(self.ent_recibido.get())
             vueltas = recibido - self.total_venta
-            if vueltas >= 0:
-                self.lbl_vueltas.configure(text=f"VUELTAS: ${vueltas:,.0f}")
-            else:
-                self.lbl_vueltas.configure(text="Falta dinero")
+            self.lbl_vueltas.configure(text=f"VUELTAS: ${vueltas:,.0f}" if vueltas >= 0 else "Falta dinero")
         except ValueError:
             self.lbl_vueltas.configure(text="VUELTAS: $0")
 
     def procesar_venta(self):
-        if not self.carrito:
-            messagebox.showwarning("Atención", "El carrito está vacío.")
-            return
-
+        if not self.carrito: return
         try:
             recibido = float(self.ent_recibido.get())
             vueltas = recibido - self.total_venta
-            if vueltas < 0:
-                messagebox.showerror("Error", "El valor recibido es menor al total.")
-                return
-        except ValueError:
-            messagebox.showerror("Error", "Ingrese un valor recibido válido.")
-            return
+            if vueltas < 0: return messagebox.showerror("Error", "Dinero insuficiente.")
+        except: return messagebox.showerror("Error", "Ingrese valor válido.")
 
-        # 1. Guardar en Base de Datos
         conexion = base_datos.obtener_conexion()
         cursor = conexion.cursor()
-        
         try:
-            # Cabecera de venta
             cursor.execute("INSERT INTO ventas (total_venta, valor_recibido, vueltas) VALUES (?, ?, ?)", (self.total_venta, recibido, vueltas))
             numero_factura = cursor.lastrowid
-
-            # Detalles y descontar stock
             for item in self.carrito:
                 cursor.execute("INSERT INTO detalle_venta (numero_factura, id_producto, cantidad_o_peso, subtotal) VALUES (?, ?, ?, ?)",
                                (numero_factura, item["id_producto"], item["cantidad"], item["subtotal"]))
-                
                 cursor.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE id_producto = ?", (item["cantidad"], item["id_producto"]))
-
             conexion.commit()
-            
-            # --- NUEVA LÍNEA PARA GENERAR E IMPRIMIR LA FACTURA ---
             impresion.generar_y_imprimir_factura(numero_factura, self.carrito, self.total_venta, recibido, vueltas)
-
-            messagebox.showinfo("Venta Exitosa", f"Se generó e imprimió la factura #{numero_factura}")
+            messagebox.showinfo("Éxito", f"Factura #{numero_factura} impresa.")
             
-            # Limpiar pantalla
-            self.carrito.clear()
-
-            messagebox.showinfo("Venta Exitosa", f"Se generó la factura #{numero_factura}")
-            
-            # --- AQUÍ LLAMAREMOS A LA FUNCIÓN DE IMPRIMIR PDF EN EL SIGUIENTE PASO ---
-            
-            # Limpiar pantalla
             self.carrito.clear()
             for item in self.tabla_carrito.get_children(): self.tabla_carrito.delete(item)
             self.total_venta = 0.0
             self.actualizar_total()
             self.ent_recibido.delete(0, 'end')
-            self.ent_buscador.delete(0, 'end')
             self.filtrar_productos_venta()
-            
-        except Exception as e:
-            messagebox.showerror("Error BD", str(e))
-            conexion.rollback()
         finally:
             conexion.close()
+
+    # ==========================================
+    # 3. NUEVO MÓDULO: CIERRE DE CAJA
+    # ==========================================
+    def crear_vista_reportes(self):
+        frame = ctk.CTkFrame(self.frame_principal, fg_color="transparent")
+        frame.grid_rowconfigure(2, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
+
+        # Encabezado
+        ctk.CTkLabel(frame, text="Cierre de Caja - Reporte del Día", font=ctk.CTkFont(size=24, weight="bold")).grid(row=0, column=0, pady=(0, 10), sticky="w")
+        
+        # Panel de Métricas
+        panel_metricas = ctk.CTkFrame(frame)
+        panel_metricas.grid(row=1, column=0, sticky="ew", pady=10)
+        panel_metricas.grid_columnconfigure((0, 1), weight=1)
+        
+        self.lbl_total_cierre = ctk.CTkLabel(panel_metricas, text="Total Ingresos: $0", font=ctk.CTkFont(size=28, weight="bold"), text_color="#2A9D8F")
+        self.lbl_total_cierre.grid(row=0, column=0, pady=20)
+        
+        self.lbl_cantidad_facturas = ctk.CTkLabel(panel_metricas, text="Facturas Emitidas: 0", font=ctk.CTkFont(size=24, weight="bold"))
+        self.lbl_cantidad_facturas.grid(row=0, column=1, pady=20)
+
+        # Tabla de ventas del día
+        ctk.CTkLabel(frame, text="Detalle de Facturas de Hoy", font=ctk.CTkFont(size=16)).grid(row=2, column=0, sticky="w", pady=(10, 5))
+        
+        cols_cierre = ("No. Factura", "Hora de Venta", "Total")
+        self.tabla_cierre = ttk.Treeview(frame, columns=cols_cierre, show="headings")
+        self.tabla_cierre.heading("No. Factura", text="No. Factura")
+        self.tabla_cierre.heading("Hora de Venta", text="Fecha y Hora")
+        self.tabla_cierre.heading("Total", text="Total")
+        
+        self.tabla_cierre.column("No. Factura", width=100, anchor="center")
+        self.tabla_cierre.column("Hora de Venta", width=250, anchor="center")
+        self.tabla_cierre.column("Total", width=150, anchor="e")
+        
+        self.tabla_cierre.grid(row=3, column=0, sticky="nsew")
+
+        # Botón Imprimir
+        btn_imprimir_cierre = ctk.CTkButton(frame, text="IMPRIMIR CORTE Z (PDF)", height=50, font=ctk.CTkFont(weight="bold"), command=self.imprimir_cierre)
+        btn_imprimir_cierre.grid(row=4, column=0, pady=20)
+
+        return frame
+
+    def cargar_datos_cierre(self):
+        # Limpiar tabla
+        for item in self.tabla_cierre.get_children():
+            self.tabla_cierre.delete(item)
+            
+        conexion = base_datos.obtener_conexion()
+        cursor = conexion.cursor()
+        
+        # Filtrar solo las ventas de la fecha actual
+        # Utilizamos date(..., 'localtime') para sincronizar la zona horaria del PC
+        cursor.execute("""
+            SELECT numero_factura, datetime(fecha_venta, 'localtime'), total_venta 
+            FROM ventas 
+            WHERE date(fecha_venta, 'localtime') = date('now', 'localtime')
+        """)
+        ventas_hoy = cursor.fetchall()
+        conexion.close()
+        
+        total_dia = 0
+        for fila in ventas_hoy:
+            self.tabla_cierre.insert("", "end", values=(fila[0], fila[1], f"${fila[2]:,.0f}"))
+            total_dia += fila[2]
+            
+        self.total_dia_actual = total_dia
+        self.cantidad_facturas_actual = len(ventas_hoy)
+        
+        self.lbl_total_cierre.configure(text=f"Total Ingresos: ${total_dia:,.0f}")
+        self.lbl_cantidad_facturas.configure(text=f"Facturas Emitidas: {self.cantidad_facturas_actual}")
+
+    def imprimir_cierre(self):
+        if self.cantidad_facturas_actual == 0:
+            messagebox.showinfo("Aviso", "No hay ventas registradas el día de hoy.")
+            return
+            
+        fecha_cierre = datetime.now().strftime('%d/%m/%Y')
+        impresion.generar_imprimir_cierre(self.total_dia_actual, self.cantidad_facturas_actual, fecha_cierre)
+        messagebox.showinfo("Cierre Exitoso", "Se ha enviado el reporte de cierre a la impresora.")
 
 if __name__ == "__main__":
     app = SalsamentariaApp()

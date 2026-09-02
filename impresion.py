@@ -102,3 +102,48 @@ def generar_y_imprimir_factura(numero_factura, carrito, total, recibido, vueltas
         os.startfile(ruta_pdf, "print")
     except Exception as e:
         print(f"Error al enviar a la impresora: {e}")
+
+def generar_imprimir_cierre(total_dia, cantidad_facturas, fecha_cierre):
+    if not os.path.exists("facturas_pdf"):
+        os.makedirs("facturas_pdf")
+        
+    # Formatear la fecha para que el nombre del archivo sea válido (sin caracteres raros)
+    fecha_archivo = fecha_cierre.replace("/", "-")
+    ruta_pdf = os.path.abspath(f"facturas_pdf/cierre_{fecha_archivo}.pdf")
+    
+    c = canvas.Canvas(ruta_pdf, pagesize=MEDIA_CARTA)
+    ancho, alto = MEDIA_CARTA
+    
+    # Encabezado
+    c.setFont("Helvetica-Bold", 16)
+    c.drawCentredString(ancho / 2, alto - 20 * mm, "CIERRE DE CAJA DIARIO")
+    
+    c.setFont("Helvetica", 12)
+    c.drawCentredString(ancho / 2, alto - 30 * mm, f"SALSAMENTARIA")
+    c.drawCentredString(ancho / 2, alto - 36 * mm, f"Fecha de cierre: {fecha_cierre}")
+    
+    c.line(10 * mm, alto - 45 * mm, ancho - 10 * mm, alto - 45 * mm)
+    
+    # Resumen de métricas
+    y = alto - 60 * mm
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(20 * mm, y, "Total Ventas del Día:")
+    c.drawRightString(ancho - 20 * mm, y, f"${total_dia:,.0f}")
+    
+    y -= 15 * mm
+    c.drawString(20 * mm, y, "Facturas Emitidas:")
+    c.drawRightString(ancho - 20 * mm, y, f"{cantidad_facturas}")
+    
+    c.line(10 * mm, y - 10 * mm, ancho - 10 * mm, y - 10 * mm)
+    
+    # Pie de página
+    c.setFont("Helvetica-Oblique", 10)
+    c.drawCentredString(ancho / 2, y - 25 * mm, "Reporte generado automáticamente")
+    
+    c.save()
+    
+    # Imprimir automáticamente
+    try:
+        os.startfile(ruta_pdf, "print")
+    except Exception as e:
+        print(f"Error al enviar a la impresora: {e}")
